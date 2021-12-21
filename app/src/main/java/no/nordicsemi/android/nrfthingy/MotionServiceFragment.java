@@ -41,9 +41,12 @@ package no.nordicsemi.android.nrfthingy;
 import android.annotation.TargetApi;
 import android.bluetooth.BluetoothDevice;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Environment;
 import android.os.Handler;
 import android.text.SpannableString;
 import android.util.Log;
@@ -80,8 +83,10 @@ import com.jjoe64.graphview.series.PointsGraphSeries;
 import org.rajawali3d.surface.RajawaliSurfaceView;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -505,9 +510,64 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
 
     }
 
+    private void writeToSDFile(ArrayList<String> lista1, ArrayList<String> lista2, ArrayList<String> lista3){
+
+        // Find the root of the external storage.
+        // See http://developer.android.com/guide/topics/data/data-  storage.html#filesExternal
+
+        File root = android.os.Environment.getExternalStorageDirectory();
+
+        // See http://stackoverflow.com/questions/3551821/android-write-to-sd-card-folder
+
+        File dir = new File (root.getAbsolutePath() + "/Download");
+        dir.mkdirs();
+        File file = new File(dir, "myDataa4.txt");
+
+        try {
+            FileOutputStream f = new FileOutputStream(file);
+            PrintWriter pw = new PrintWriter(f);
+
+            int size1 = Math.min(lista1.size(), lista2.size());
+            int size_oficial = Math.min(lista3.size(), size1);
+
+            // Escreve uma linha no arquivo
+            for(int x=0; x<size_oficial;x++) {
+                //words.get(0) é igual a "nome_da_sequencia;nivel_dificultade;sequencia"
+                StringBuilder stringBuilder = new StringBuilder();
+                stringBuilder.append(x);
+                stringBuilder.append(",");
+                stringBuilder.append(lista1.get(x));
+                stringBuilder.append(",");
+                stringBuilder.append(lista2.get(x));
+                stringBuilder.append(",");
+                stringBuilder.append(lista3.get(x));
+                String word = stringBuilder.toString() + "\n";
+                pw.println(word);
+            }
+
+            pw.flush();
+            pw.close();
+            f.close();
+            Log.i("TestingShare", "******* Success");
+            Intent sharingIntent = new Intent(Intent.ACTION_SEND);
+            sharingIntent.setType("text/plain");
+            sharingIntent.putExtra(Intent.EXTRA_STREAM, Uri.parse(file.getPath()));
+            startActivity(Intent.createChooser(sharingIntent, "share file with"));
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+            Log.i("TestingShare", "******* File not found. Did you" +
+                    " add a WRITE_EXTERNAL_STORAGE permission to the   manifest?");
+        } catch (IOException e) {
+            e.printStackTrace();
+            Log.i("TestingShare", "*******"+e.getMessage());
+        }
+
+    }
+
     @Override
     public View onCreateView(@NonNull final LayoutInflater inflater, final ViewGroup container, final Bundle savedInstanceState) {
         View rootView = inflater.inflate(R.layout.miguel_fragment, container, false);
+        checkExternalMedia();
         handler = new Handler();
         handler.postDelayed(runnable, 1000);
         boolean is_miguel = true; //jeito de manter os dois layouts
@@ -533,6 +593,7 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
                         //enableGravityVectorNotifications(true);
                         enableGravityVectorNotifications(true);
                         enableRawDataNotifications(true);
+                        btn_start.setText("Stop");
                     }else{
                         handler.removeMessages(0);
                         btn_start.setText("Start");
@@ -540,17 +601,50 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
                         enableRawDataNotifications(false);
 
                         Toast.makeText(getContext(), String.valueOf(valueAcelerometer.size()), Toast.LENGTH_SHORT).show();
+                        String path = null;
                         try {
-                            wirte(valueGyroscopio, valueAcelerometer, valueMagnetometer, "DadosStrainghtLineMulti"+ String.valueOf(quantidade_vezes) +"teste1112.txt");
+                            path = wirte(valueGyroscopio, valueAcelerometer, valueMagnetometer, "DadosStrainghtLineMulti"+ String.valueOf(quantidade_vezes) +"ta.txt");
+                            writeToSDFile(valueGyroscopio, valueAcelerometer, valueMagnetometer);
                             valueAcelerometer = new ArrayList<>();
                             valueGravity = new ArrayList<>();
                             valueGyroscopio = new ArrayList<>();
                             valueMagnetometer = new ArrayList<>();
 
 
+
                         } catch (IOException e) {
                             e.printStackTrace();
                         }
+
+                        //writeToSDFile(valueGyroscopio, valueAcelerometer, valueMagnetometer);
+
+                        if(path == null){
+                            /*
+                            Log.v("ShareIntent", "passo1");
+                            Uri uri;
+                            File file = new File(path);
+                            if (Build.VERSION.SDK_INT < 24) {
+                                uri = Uri.fromFile(file);
+                            } else {
+                                uri = Uri.parse(file.getPath()); // My work-around for new SDKs, worked for me in Android 10 using Solid Explorer Text Editor as the external editor.
+                            }
+
+                            Intent shareIntent = new Intent();
+                            shareIntent.setAction(Intent.ACTION_SEND);
+                            shareIntent.putExtra(Intent.EXTRA_STREAM, uri);
+                            shareIntent.setType("text/*");
+                            Log.v("ShareIntent", "passo2");
+                            startActivity(Intent.createChooser(shareIntent,null));*/
+                            File file = new File(path);
+                            Intent sharingIntent = new Intent(Intent.ACTION_SEND);
+                            sharingIntent.setType("text/plain");
+                            sharingIntent.putExtra(Intent.EXTRA_STREAM, Uri.parse("file:/"+file.getPath())) ;
+
+
+                            //sharingIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                            startActivity(Intent.createChooser(sharingIntent, "share file with"));
+                        }
+
                         temporizador = 0;
                         tempo.setText("Tempo: ");
                         acel.setText("Acelerometro:"+String.valueOf(valueAcelerometer.size()));
@@ -750,6 +844,24 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
         return rootView;
     }
 
+    private void checkExternalMedia(){
+        boolean mExternalStorageAvailable = false;
+        boolean mExternalStorageWriteable = false;
+        String state = Environment.getExternalStorageState();
+
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            // Can read and write the media
+            mExternalStorageAvailable = mExternalStorageWriteable = true;
+        } else if (Environment.MEDIA_MOUNTED_READ_ONLY.equals(state)) {
+            // Can only read the media
+            mExternalStorageAvailable = true;
+            mExternalStorageWriteable = false;
+        } else {
+            // Can't read or write
+            mExternalStorageAvailable = mExternalStorageWriteable = false;
+        }
+    }
+
     //atualiza o time a cada segundo
     private final Runnable runnable = new Runnable() {
         @Override
@@ -761,7 +873,7 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
     };
 
     // função que recebe os dados e salva em um arquivo no armazenamento interno do aplicativo
-    public void wirte(ArrayList<String> lista1, ArrayList<String> lista2, ArrayList<String> lista3, String inFile) throws IOException {
+    public String wirte(ArrayList<String> lista1, ArrayList<String> lista2, ArrayList<String> lista3, String inFile) throws IOException {
         File internalStorageDir = getActivity().getFilesDir();
         File alice = new File(internalStorageDir, inFile);
         // Cria o output stream do arquivo
@@ -787,7 +899,10 @@ public class MotionServiceFragment extends Fragment implements ScannerFragmentLi
         // Fecha o output stream do arquivo
         fos.close();
         Log.v("FilePath", alice.getAbsolutePath());
+        return alice.getAbsolutePath();
     }
+
+
 
     //Miguel
     private void initGraphs(GraphView graphExample) {
